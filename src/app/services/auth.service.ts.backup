@@ -1,0 +1,275 @@
+import { Injectable } from '@angular/core';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { User, LoginCredentials, RegisterInput, UserKey, CreateUserKeyInput } from '../models/user.model';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthService {
+  private currentUserSubject = new BehaviorSubject<User | null>(null);
+  public currentUser$: Observable<User | null> = this.currentUserSubject.asObservable();
+
+  private users: User[] = [];
+  private userKeys: UserKey[] = [];
+
+  constructor() {
+    this.loadMockUsers();
+    this.loadMockUserKeys();
+    this.checkStoredSession();
+  }
+
+  private loadMockUsers(): void {
+    // Mock users for testing
+    this.users = [
+      {
+        id: 'user1',
+        username: 'admin',
+        email: 'admin@jio.com',
+        password: 'admin123', // In production, use hashed passwords
+        firstName: 'Admin',
+        lastName: 'User',
+        mobile: '+91 98765 43210',
+        photoUrl: 'https://ui-avatars.com/api/?name=Admin+User&background=0033A0&color=fff&size=128',
+        createdAt: new Date('2024-01-01')
+      },
+      {
+        id: 'user2',
+        username: 'john',
+        email: 'john@jio.com',
+        password: 'john123',
+        firstName: 'John',
+        lastName: 'Doe',
+        mobile: '+91 98765 43211',
+        photoUrl: 'https://ui-avatars.com/api/?name=John+Doe&background=0033A0&color=fff&size=128',
+        createdAt: new Date('2024-01-15')
+      },
+      {
+        id: 'user3',
+        username: 'alice',
+        email: 'alice@jio.com',
+        password: 'alice123',
+        firstName: 'Alice',
+        lastName: 'Smith',
+        mobile: '+91 98765 43212',
+        photoUrl: 'https://ui-avatars.com/api/?name=Alice+Smith&background=0033A0&color=fff&size=128',
+        createdAt: new Date('2024-02-01')
+      }
+    ];
+  }
+
+  private checkStoredSession(): void {
+    const storedUser = localStorage.getItem('jnops-current-user');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        this.currentUserSubject.next(user);
+      } catch (e) {
+        localStorage.removeItem('jnops-current-user');
+      }
+    }
+  }
+
+  login(credentials: LoginCredentials): { success: boolean; message?: string; user?: User } {
+    const user = this.users.find(
+      u => u.username === credentials.username && u.password === credentials.password
+    );
+
+    if (user) {
+      // Don't store password in session
+      const userSession = { ...user };
+      delete (userSession as any).password;
+
+      this.currentUserSubject.next(userSession);
+      localStorage.setItem('jnops-current-user', JSON.stringify(userSession));
+
+      return { success: true, user: userSession };
+    }
+
+    return { success: false, message: 'Invalid username or password' };
+  }
+
+  register(input: RegisterInput): { success: boolean; message?: string; user?: User } {
+    // Check if username already exists
+    if (this.users.find(u => u.username === input.username)) {
+      return { success: false, message: 'Username already exists' };
+    }
+
+    // Check if email already exists
+    if (this.users.find(u => u.email === input.email)) {
+      return { success: false, message: 'Email already exists' };
+    }
+
+    // Create new user
+    const newUser: User = {
+      id: `user${Date.now()}`,
+      username: input.username,
+      email: input.email,
+      password: input.password,
+      firstName: input.username,
+      lastName: '',
+      mobile: '',
+      photoUrl: `https://ui-avatars.com/api/?name=${input.username}&background=0033A0&color=fff&size=128`,
+      createdAt: new Date()
+    };
+
+    this.users.push(newUser);
+
+    // Auto-login after registration
+    const userSession = { ...newUser };
+    delete (userSession as any).password;
+
+    this.currentUserSubject.next(userSession);
+    localStorage.setItem('jnops-current-user', JSON.stringify(userSession));
+
+    return { success: true, user: userSession };
+  }
+
+  logout(): void {
+    this.currentUserSubject.next(null);
+    localStorage.removeItem('jnops-current-user');
+  }
+
+  getCurrentUser(): User | null {
+    return this.currentUserSubject.value;
+  }
+
+  isAuthenticated(): boolean {
+    return this.currentUserSubject.value !== null;
+  }
+
+  getCurrentUserId(): string | null {
+    return this.currentUserSubject.value?.id || null;
+  }
+
+  updateUserPhoto(photoUrl: string): { success: boolean; message?: string } {
+    const currentUserId = this.getCurrentUserId();
+    if (!currentUserId) {
+      return { success: false, message: 'User not authenticated' };
+    }
+
+    // Update in users array
+    const userIndex = this.users.findIndex(u => u.id === currentUserId);
+    if (userIndex !== -1) {
+      this.users[userIndex].photoUrl = photoUrl;
+    }
+
+    // Update current user session
+    const currentUser = this.currentUserSubject.value;
+    if (currentUser) {
+      const updatedUser = { ...currentUser, photoUrl };
+      this.currentUserSubject.next(updatedUser);
+      localStorage.setItem('jnops-current-user', JSON.stringify(updatedUser));
+    }
+
+    return { success: true };
+  }
+
+  private loadMockUserKeys(): void {
+    // Create default key for each user
+    this.userKeys = [
+      {
+        id: 'key1',
+        userId: 'user1',
+        name: 'Default Key',
+        key: 'jio-iot-key-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6',
+        createdAt: new Date('2024-01-01')
+      },
+      {
+        id: 'key2',
+        userId: 'user2',
+        name: 'Default Key',
+        key: 'jio-iot-key-b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7',
+        createdAt: new Date('2024-01-15')
+      },
+      {
+        id: 'key3',
+        userId: 'user3',
+        name: 'Default Key',
+        key: 'jio-iot-key-c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8',
+        createdAt: new Date('2024-02-01')
+      }
+    ];
+  }
+
+  // User Keys Management
+  getUserKeys(): UserKey[] {
+    const currentUserId = this.getCurrentUserId();
+    if (!currentUserId) return [];
+    return this.userKeys.filter(k => k.userId === currentUserId);
+  }
+
+  createUserKey(input: CreateUserKeyInput): { success: boolean; message?: string; key?: UserKey } {
+    const currentUserId = this.getCurrentUserId();
+    if (!currentUserId) {
+      return { success: false, message: 'User not authenticated' };
+    }
+
+    // Check if user already has 5 keys
+    const userKeyCount = this.userKeys.filter(k => k.userId === currentUserId).length;
+    if (userKeyCount >= 5) {
+      return { success: false, message: 'Maximum 5 keys allowed per user' };
+    }
+
+    // Generate key name
+    const serialNumber = userKeyCount + 1;
+    const keyName = input.name || `Key ${serialNumber}`;
+
+    // Generate random key
+    const randomKey = 'jio-iot-key-' + Array.from({ length: 32 }, () =>
+      Math.random().toString(36).charAt(2)
+    ).join('');
+
+    const newKey: UserKey = {
+      id: `key${Date.now()}`,
+      userId: currentUserId,
+      name: keyName,
+      key: randomKey,
+      createdAt: new Date()
+    };
+
+    this.userKeys.push(newKey);
+
+    return { success: true, key: newKey };
+  }
+
+  updateUserKeyName(keyId: string, name: string): { success: boolean; message?: string } {
+    const currentUserId = this.getCurrentUserId();
+    if (!currentUserId) {
+      return { success: false, message: 'User not authenticated' };
+    }
+
+    const keyIndex = this.userKeys.findIndex(k => k.id === keyId && k.userId === currentUserId);
+    if (keyIndex === -1) {
+      return { success: false, message: 'Key not found' };
+    }
+
+    this.userKeys[keyIndex] = {
+      ...this.userKeys[keyIndex],
+      name: name
+    };
+
+    return { success: true };
+  }
+
+  deleteUserKey(keyId: string): { success: boolean; message?: string } {
+    const currentUserId = this.getCurrentUserId();
+    if (!currentUserId) {
+      return { success: false, message: 'User not authenticated' };
+    }
+
+    // Check if user has more than one key
+    const userKeyCount = this.userKeys.filter(k => k.userId === currentUserId).length;
+    if (userKeyCount <= 1) {
+      return { success: false, message: 'Cannot delete the last key. You must have at least one API key.' };
+    }
+
+    const keyIndex = this.userKeys.findIndex(k => k.id === keyId && k.userId === currentUserId);
+    if (keyIndex === -1) {
+      return { success: false, message: 'Key not found' };
+    }
+
+    this.userKeys.splice(keyIndex, 1);
+
+    return { success: true };
+  }
+}

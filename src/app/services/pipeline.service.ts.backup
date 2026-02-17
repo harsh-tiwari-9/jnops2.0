@@ -1,0 +1,193 @@
+import { Injectable } from '@angular/core';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { Pipeline, CreatePipelineInput } from '../models/pipeline.model';
+import { AuthService } from './auth.service';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class PipelineService {
+  private allPipelinesSubject = new BehaviorSubject<Pipeline[]>([]);
+  public pipelines$: Observable<Pipeline[]>;
+
+  constructor(private authService: AuthService) {
+    this.loadMockPipelines();
+
+    // Filter pipelines by current user
+    this.pipelines$ = this.allPipelinesSubject.asObservable().pipe(
+      map(pipelines => {
+        const currentUserId = this.authService.getCurrentUserId();
+        if (!currentUserId) return [];
+        return pipelines.filter(p => p.userId === currentUserId);
+      })
+    );
+  }
+
+  private loadMockPipelines(): void {
+    const mockPipelines: Pipeline[] = [
+      // User 1 (admin) pipelines
+      {
+        id: 'pipe1',
+        userId: 'user1',
+        name: 'Pipeline Telematics',
+        description: 'Real-time temperature and environmental data processing for building automation',
+        status: 'active',
+        endpoints: ['ep1', 'ep4', 'ep5'],
+        devices: ['IOT-DEV-001', 'IOT-DEV-002', 'IOT-DEV-003', 'IOT-DEV-004', 'IOT-DEV-005', 'IOT-DEV-006', 'IOT-DEV-007', 'IOT-DEV-008', 'IOT-DEV-009', 'IOT-DEV-010', 'IOT-DEV-011', 'IOT-DEV-012'],
+        executionMode: 'streaming',
+      },
+      {
+        id: 'pipe2',
+        userId: 'user1',
+        name: 'Environmental Monitoring',
+        description: 'Collect and analyze environmental data from air quality and humidity sensors',
+        status: 'active',
+        endpoints: ['ep2', 'ep3', 'ep5'],
+        devices: ['IOT-DEV-013', 'IOT-DEV-014'],
+        executionMode: 'batch',
+      },
+      // User 2 (john) pipelines
+      {
+        id: 'pipe3',
+        userId: 'user2',
+        name: 'Energy Management Pipeline',
+        description: 'Track and optimize energy consumption across all buildings',
+        status: 'inactive',
+        endpoints: ['ep7'],
+        devices: ['IOT-DEV-015'],
+        executionMode: 'streaming',
+      },
+      {
+        id: 'pipe4',
+        userId: 'user2',
+        name: 'Smart Building Control',
+        description: 'Automated control system for HVAC and lighting',
+        status: 'active',
+        endpoints: ['ep8'],
+        devices: ['IOT-DEV-016', 'IOT-DEV-017'],
+        executionMode: 'streaming',
+      },
+      // User 3 (alice) pipelines
+      {
+        id: 'pipe5',
+        userId: 'user3',
+        name: 'Security Monitoring',
+        description: 'Real-time security camera and sensor monitoring',
+        status: 'active',
+        endpoints: ['ep9'],
+        devices: ['IOT-DEV-018', 'IOT-DEV-019', 'IOT-DEV-020'],
+        executionMode: 'streaming',
+      },
+    ];
+
+    this.allPipelinesSubject.next(mockPipelines);
+  }
+
+  getPipelines(): Pipeline[] {
+    const currentUserId = this.authService.getCurrentUserId();
+    if (!currentUserId) return [];
+    return this.allPipelinesSubject.value.filter(p => p.userId === currentUserId);
+  }
+
+  getPipelineById(id: string): Pipeline | undefined {
+    const currentUserId = this.authService.getCurrentUserId();
+    if (!currentUserId) return undefined;
+    return this.allPipelinesSubject.value.find(p => p.id === id && p.userId === currentUserId);
+  }
+
+  createPipeline(input: CreatePipelineInput): void {
+    const currentUserId = this.authService.getCurrentUserId();
+    if (!currentUserId) return;
+
+    const newPipeline: Pipeline = {
+      ...input,
+      id: `pipe${Date.now()}`,
+      userId: currentUserId,
+      endpoints: [],
+      devices: [],
+      status: 'inactive',
+    };
+
+    const current = this.allPipelinesSubject.value;
+    this.allPipelinesSubject.next([...current, newPipeline]);
+  }
+
+  updatePipeline(id: string, updates: Partial<Pipeline>): void {
+    const current = this.allPipelinesSubject.value;
+    const updated = current.map(p => p.id === id ? { ...p, ...updates } : p);
+    this.allPipelinesSubject.next(updated);
+  }
+
+  deletePipeline(id: string): void {
+    const current = this.allPipelinesSubject.value;
+    const filtered = current.filter(p => p.id !== id);
+    this.allPipelinesSubject.next(filtered);
+  }
+
+  // Endpoint management
+  addEndpointToPipeline(pipelineId: string, endpointId: string): boolean {
+    const pipeline = this.getPipelineById(pipelineId);
+    if (!pipeline) return false;
+
+    if (pipeline.endpoints.length >= 4) {
+      return false; // Max 4 endpoints
+    }
+
+    if (pipeline.endpoints.includes(endpointId)) {
+      return false; // Already added
+    }
+
+    this.updatePipeline(pipelineId, {
+      endpoints: [...pipeline.endpoints, endpointId]
+    });
+    return true;
+  }
+
+  removeEndpointFromPipeline(pipelineId: string, endpointId: string): void {
+    const pipeline = this.getPipelineById(pipelineId);
+    if (!pipeline) return;
+
+    this.updatePipeline(pipelineId, {
+      endpoints: pipeline.endpoints.filter(id => id !== endpointId)
+    });
+  }
+
+  // Device management
+  addDeviceToPipeline(pipelineId: string, deviceId: string): boolean {
+    // Check if device is already in another pipeline
+    const deviceInUse = this.allPipelinesSubject.value.some(p =>
+      p.id !== pipelineId && p.devices.includes(deviceId)
+    );
+
+    if (deviceInUse) {
+      return false; // Device already assigned to another pipeline
+    }
+
+    const pipeline = this.getPipelineById(pipelineId);
+    if (!pipeline) return false;
+
+    if (pipeline.devices.includes(deviceId)) {
+      return false; // Already added
+    }
+
+    this.updatePipeline(pipelineId, {
+      devices: [...pipeline.devices, deviceId]
+    });
+    return true;
+  }
+
+  removeDeviceFromPipeline(pipelineId: string, deviceId: string): void {
+    const pipeline = this.getPipelineById(pipelineId);
+    if (!pipeline) return;
+
+    this.updatePipeline(pipelineId, {
+      devices: pipeline.devices.filter(id => id !== deviceId)
+    });
+  }
+
+  // Get all used device IDs across all pipelines
+  getUsedDeviceIds(): string[] {
+    return this.allPipelinesSubject.value.flatMap(p => p.devices);
+  }
+}
